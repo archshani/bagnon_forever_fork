@@ -26,6 +26,16 @@ elseif locale == "deDE" then
 	L_GUILD_BANK = "Gildenbank"
 end
 
+-- Color Scheme Presets
+local SCHEMES = {
+	Default = { player = "00ff9a", detail = "c7c7cf" },
+	Classic = { player = "00ff00", detail = "888888" },
+	Ocean = { player = "00c0ff", detail = "ffffff" },
+	Volcano = { player = "ff8000", detail = "ffff00" },
+	Royal = { player = "a335ee", detail = "ff69b4" },
+	Monochrome = { player = "ffffff", detail = "c7c7cf" }
+}
+
 -- Forward declarations
 local BagnonTooltipsScrollChild
 local optionsPanel = CreateFrame("Frame", "BagnonTooltipsOptionsPanel", UIParent)
@@ -54,21 +64,22 @@ local function InitDB()
 	if BagnonTooltipsDB.fontPath == nil then
 		BagnonTooltipsDB.fontPath = "Default"
 	end
-	if BagnonTooltipsDB.playerColor == nil then
-		BagnonTooltipsDB.playerColor = "00ff9a"
-	end
-	if BagnonTooltipsDB.detailColor == nil then
-		BagnonTooltipsDB.detailColor = "c7c7cf"
+	if BagnonTooltipsDB.colorScheme == nil then
+		BagnonTooltipsDB.colorScheme = "Default"
 	end
 end
 
 -- Custom color helpers
 local function GetPlayerColor()
-	return (BagnonTooltipsDB and BagnonTooltipsDB.playerColor) or "00ff9a"
+	local scheme = (BagnonTooltipsDB and BagnonTooltipsDB.colorScheme) or "Default"
+	local colors = SCHEMES[scheme] or SCHEMES.Default
+	return colors.player
 end
 
 local function GetDetailColor()
-	return (BagnonTooltipsDB and BagnonTooltipsDB.detailColor) or "c7c7cf"
+	local scheme = (BagnonTooltipsDB and BagnonTooltipsDB.colorScheme) or "Default"
+	local colors = SCHEMES[scheme] or SCHEMES.Default
+	return colors.detail
 end
 
 local function formatPlayerColor(text)
@@ -306,30 +317,6 @@ local function CreateCheckbox(parent, label, settingKey, description)
 	return check
 end
 
--- Slider creation helper
-local function CreateSlider(parent, label, settingKey, minVal, maxVal, step)
-	local slider = CreateFrame("Slider", parent:GetName() .. "_" .. settingKey, parent, "OptionsSliderTemplate")
-	slider:SetMinMaxValues(minVal, maxVal)
-	slider:SetValueStep(step)
-
-	_G[slider:GetName() .. "Text"]:SetText(label)
-	_G[slider:GetName() .. "Low"]:SetText(tostring(minVal))
-	_G[slider:GetName() .. "High"]:SetText(tostring(maxVal))
-
-	slider:SetScript("OnShow", function(self)
-		local val = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or 12
-		self:SetValue(val)
-	end)
-
-	slider:SetScript("OnValueChanged", function(self, value)
-		if BagnonTooltipsDB then
-			BagnonTooltipsDB[settingKey] = value
-		end
-	end)
-
-	return slider
-end
-
 -- Dropdown creation helper
 local function CreateDropdown(parent, label, settingKey, items, width)
 	local labelString = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -533,17 +520,13 @@ local fontItems = {
 	{ text = "Skurri", value = "Fonts\\skurri.ttf" }
 }
 
-local colorItems = {
-	{ text = "Teal (Default Player)", value = "00ff9a" },
-	{ text = "Silver (Default Detail)", value = "c7c7cf" },
-	{ text = "Red", value = "ff0000" },
-	{ text = "Green", value = "00ff00" },
-	{ text = "Blue", value = "00c0ff" },
-	{ text = "Yellow", value = "ffff00" },
-	{ text = "Orange", value = "ff8000" },
-	{ text = "Purple", value = "a335ee" },
-	{ text = "Pink", value = "ff69b4" },
-	{ text = "White", value = "ffffff" }
+local colorSchemeItems = {
+	{ text = "Teal & Silver (Default)", value = "Default" },
+	{ text = "Green & Grey (Classic)", value = "Classic" },
+	{ text = "Blue & White (Ocean)", value = "Ocean" },
+	{ text = "Orange & Yellow (Volcano)", value = "Volcano" },
+	{ text = "Purple & Pink (Royal)", value = "Royal" },
+	{ text = "White & Silver (Monochrome)", value = "Monochrome" }
 }
 
 local eventFrame = CreateFrame("Frame")
@@ -616,21 +599,48 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		BagnonTooltipsScrollChild:SetSize(210, 1)
 		scrollFrame:SetScrollChild(BagnonTooltipsScrollChild)
 
-		-- Column 2 (Right Column, X = 280)
-		local sliderSize = CreateSlider(optionsPanel, "Font Size", "fontSize", 8, 24, 1)
-		sliderSize:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 280, -24)
+		-- Column 2 (Right Column, X = 300)
+		-- Font Size Textbox (EditBox)
+		local lblSize = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		lblSize:SetText("Font Size (6-36):")
+		lblSize:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 300, -24)
 
+		local sizeInput = CreateFrame("EditBox", "BagnonTooltipsFontSizeInput", optionsPanel, "InputBoxTemplate")
+		sizeInput:SetSize(50, 26)
+		sizeInput:SetPoint("TOPLEFT", lblSize, "BOTTOMLEFT", 4, -8)
+		sizeInput:SetNumeric(true)
+		sizeInput:SetMaxLetters(2)
+		sizeInput:SetAutoFocus(false)
+
+		sizeInput:SetScript("OnShow", function(self)
+			self:SetText(tostring((BagnonTooltipsDB and BagnonTooltipsDB.fontSize) or 12))
+		end)
+
+		sizeInput:SetScript("OnTextChanged", function(self)
+			local text = self:GetText()
+			local val = tonumber(text)
+			if val then
+				if val < 6 then val = 6 end
+				if val > 36 then val = 36 end
+				if BagnonTooltipsDB then
+					BagnonTooltipsDB.fontSize = val
+				end
+			end
+		end)
+
+		sizeInput:SetScript("OnEditFocusLost", function(self)
+			self:SetText(tostring((BagnonTooltipsDB and BagnonTooltipsDB.fontSize) or 12))
+		end)
+
+		-- Font Type Dropdown
 		local ddFont, lblFont = CreateDropdown(optionsPanel, "Font Type", "fontPath", fontItems, 120)
-		lblFont:SetPoint("TOPLEFT", sliderSize, "BOTTOMLEFT", 0, -24)
-		ddFont:SetPoint("TOPLEFT", sliderSize, "BOTTOMLEFT", -15, -40)
+		lblFont:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 300, -84)
+		ddFont:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 285, -100)
 
-		local ddPlayerColor, lblPlayerColor = CreateDropdown(optionsPanel, "Player Name Color", "playerColor", colorItems, 140)
-		lblPlayerColor:SetPoint("TOPLEFT", ddFont, "BOTTOMLEFT", 15, -20)
-		ddPlayerColor:SetPoint("TOPLEFT", ddFont, "BOTTOMLEFT", 0, -36)
-
-		local ddDetailColor, lblDetailColor = CreateDropdown(optionsPanel, "Count Detail Color", "detailColor", colorItems, 140)
-		lblDetailColor:SetPoint("TOPLEFT", ddPlayerColor, "BOTTOMLEFT", 15, -20)
-		ddDetailColor:SetPoint("TOPLEFT", ddPlayerColor, "BOTTOMLEFT", 0, -36)
+		-- Color Scheme Dropdown (Combined Player + Detail Colors)
+		local ddScheme, lblScheme = CreateDropdown(optionsPanel, "Color Scheme", "colorScheme", colorSchemeItems, 160)
+		lblScheme:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 300, -154)
+		ddScheme:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 285, -170)
 
 		optionsPanel:SetScript("OnShow", function(self)
 			self:RefreshList()
