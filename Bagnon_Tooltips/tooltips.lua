@@ -26,20 +26,14 @@ elseif locale == "deDE" then
 	L_GUILD_BANK = "Gildenbank"
 end
 
--- Color Scheme Presets
-local SCHEMES = {
-	Default = { player = "00ff9a", detail = "c7c7cf" },
-	Classic = { player = "00ff00", detail = "888888" },
-	Ocean = { player = "00c0ff", detail = "ffffff" },
-	Volcano = { player = "ff8000", detail = "ffff00" },
-	Royal = { player = "a335ee", detail = "ff69b4" },
-	Monochrome = { player = "ffffff", detail = "c7c7cf" }
-}
-
 -- Forward declarations
 local BagnonTooltipsScrollChild
 local optionsPanel = CreateFrame("Frame", "BagnonTooltipsOptionsPanel", UIParent)
 optionsPanel.name = "Bagnon Tooltips"
+
+local textSettingsPanel = CreateFrame("Frame", "BagnonTooltipsTextSettingsPanel", UIParent)
+textSettingsPanel.name = "Text Settings"
+textSettingsPanel.parent = "Bagnon Tooltips"
 
 -- Default Settings & Init
 local function InitDB()
@@ -64,22 +58,21 @@ local function InitDB()
 	if BagnonTooltipsDB.fontPath == nil then
 		BagnonTooltipsDB.fontPath = "Default"
 	end
-	if BagnonTooltipsDB.colorScheme == nil then
-		BagnonTooltipsDB.colorScheme = "Default"
+	if BagnonTooltipsDB.playerColor == nil then
+		BagnonTooltipsDB.playerColor = "00ff9a"
+	end
+	if BagnonTooltipsDB.detailColor == nil then
+		BagnonTooltipsDB.detailColor = "c7c7cf"
 	end
 end
 
--- Custom color helpers
+-- Color helpers
 local function GetPlayerColor()
-	local scheme = (BagnonTooltipsDB and BagnonTooltipsDB.colorScheme) or "Default"
-	local colors = SCHEMES[scheme] or SCHEMES.Default
-	return colors.player
+	return (BagnonTooltipsDB and BagnonTooltipsDB.playerColor) or "00ff9a"
 end
 
 local function GetDetailColor()
-	local scheme = (BagnonTooltipsDB and BagnonTooltipsDB.colorScheme) or "Default"
-	local colors = SCHEMES[scheme] or SCHEMES.Default
-	return colors.detail
+	return (BagnonTooltipsDB and BagnonTooltipsDB.detailColor) or "c7c7cf"
 end
 
 local function formatPlayerColor(text)
@@ -88,6 +81,37 @@ end
 
 local function formatDetailColor(text)
 	return string.format("|cff%s%s|r", GetDetailColor(), text)
+end
+
+local function RGBToHex(r, g, b)
+	return string.format("%02x%02x%02x", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+end
+
+local function HexToRGB(hex)
+	if not hex or #hex ~= 6 then return 1, 1, 1 end
+	local r = tonumber(hex:sub(1, 2), 16) or 255
+	local g = tonumber(hex:sub(3, 4), 16) or 255
+	local b = tonumber(hex:sub(5, 6), 16) or 255
+	return r / 255, g / 255, b / 255
+end
+
+local function OpenColorPicker(currentHex, callback)
+	local r, g, b = HexToRGB(currentHex)
+
+	ColorPickerFrame:SetColorRGB(r, g, b)
+	ColorPickerFrame.hasOpacity = false
+
+	ColorPickerFrame.func = function()
+		local newR, newG, newB = ColorPickerFrame:GetColorRGB()
+		local newHex = RGBToHex(newR, newG, newB)
+		callback(newHex)
+	end
+
+	ColorPickerFrame.cancelFunc = function()
+		callback(currentHex)
+	end
+
+	ColorPickerFrame:Show()
 end
 
 -- Formatting functions
@@ -353,10 +377,84 @@ local function CreateDropdown(parent, label, settingKey, items, width)
 	return dropdown, labelString
 end
 
+-- Bidirectional Color Picker helper
+local function CreateColorPickerControl(parent, label, settingKey)
+	local container = CreateFrame("Frame", parent:GetName() .. "_" .. settingKey, parent)
+	container:SetSize(260, 36)
+
+	-- Label
+	local labelString = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	labelString:SetText(label)
+	labelString:SetSize(120, 20)
+	labelString:SetJustifyH("LEFT")
+	labelString:SetPoint("LEFT", 0, 0)
+
+	-- Color Button
+	local colorBtn = CreateFrame("Button", container:GetName() .. "_Btn", container)
+	colorBtn:SetSize(20, 20)
+	colorBtn:SetPoint("LEFT", labelString, "RIGHT", 12, 0)
+
+	local bgTex = colorBtn:CreateTexture(nil, "BACKGROUND")
+	bgTex:SetAllPoints()
+	bgTex:SetTexture(1, 1, 1)
+	colorBtn.bgTex = bgTex
+
+	local border = colorBtn:CreateTexture(nil, "OVERLAY")
+	border:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+	border:SetSize(22, 22)
+	border:SetPoint("CENTER", 0, 0)
+	border:SetVertexColor(0.5, 0.5, 0.5, 0.5)
+
+	-- Hex Input Box
+	local hexBox = CreateFrame("EditBox", container:GetName() .. "_Hex", container, "InputBoxTemplate")
+	hexBox:SetSize(60, 24)
+	hexBox:SetPoint("LEFT", colorBtn, "RIGHT", 16, 0)
+	hexBox:SetMaxLetters(6)
+	hexBox:SetAutoFocus(false)
+
+	local function UpdateControlUI(hexVal)
+		hexBox:SetText(hexVal)
+		local r, g, b = HexToRGB(hexVal)
+		bgTex:SetVertexColor(r, g, b)
+	end
+
+	colorBtn:SetScript("OnClick", function()
+		local currentHex = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or "ffffff"
+		OpenColorPicker(currentHex, function(newHex)
+			if BagnonTooltipsDB then
+				BagnonTooltipsDB[settingKey] = newHex
+				UpdateControlUI(newHex)
+			end
+		end)
+	end)
+
+	hexBox:SetScript("OnTextChanged", function(self)
+		local text = self:GetText():lower()
+		if text:match("^[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$") then
+			if BagnonTooltipsDB then
+				BagnonTooltipsDB[settingKey] = text
+				local r, g, b = HexToRGB(text)
+				bgTex:SetVertexColor(r, g, b)
+			end
+		end
+	end)
+
+	hexBox:SetScript("OnEditFocusLost", function(self)
+		local currentHex = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or "ffffff"
+		self:SetText(currentHex)
+	end)
+
+	container:SetScript("OnShow", function()
+		local currentHex = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or "ffffff"
+		UpdateControlUI(currentHex)
+	end)
+
+	return container
+end
+
 local listButtons = {}
 
 function optionsPanel:RefreshList()
-	-- Hide all existing buttons
 	for _, btn in ipairs(listButtons) do
 		btn:Hide()
 	end
@@ -435,7 +533,6 @@ end
 local function HandleBlacklistCmd(msg)
 	msg = msg and msg:trim()
 	if not msg or msg == "" then
-		-- Open options panel
 		InterfaceOptionsFrame_OpenToCategory(optionsPanel)
 		InterfaceOptionsFrame_OpenToCategory(optionsPanel)
 		return
@@ -520,29 +617,19 @@ local fontItems = {
 	{ text = "Skurri", value = "Fonts\\skurri.ttf" }
 }
 
-local colorSchemeItems = {
-	{ text = "Teal & Silver (Default)", value = "Default" },
-	{ text = "Green & Grey (Classic)", value = "Classic" },
-	{ text = "Blue & White (Ocean)", value = "Ocean" },
-	{ text = "Orange & Yellow (Volcano)", value = "Volcano" },
-	{ text = "Purple & Pink (Royal)", value = "Royal" },
-	{ text = "White & Silver (Monochrome)", value = "Monochrome" }
-}
-
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, addonName)
 	if addonName == "Bagnon_Tooltips" then
 		InitDB()
 
-		-- Setup Options Panel GUI
+		-- Setup Main Options Panel
 		optionsPanel.name = "Bagnon Tooltips"
 
 		local title = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 		title:SetPoint("TOPLEFT", 16, -16)
 		title:SetText("Bagnon Tooltips Settings")
 
-		-- Column 1 (Left Column)
 		local cbShort = CreateCheckbox(optionsPanel, "Enable Short Number Formatting", "shortNumbers", "Format numbers like 23.4k and 1.234m.")
 		cbShort:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -16)
 
@@ -599,21 +686,41 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		BagnonTooltipsScrollChild:SetSize(210, 1)
 		scrollFrame:SetScrollChild(BagnonTooltipsScrollChild)
 
-		-- Column 2 (Right Column, X = 300)
-		-- Font Size Textbox (EditBox)
-		local lblSize = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-		lblSize:SetText("Font Size (6-36):")
-		lblSize:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 300, -24)
+		optionsPanel:SetScript("OnShow", function(self)
+			self:RefreshList()
+		end)
 
-		local sizeInput = CreateFrame("EditBox", "BagnonTooltipsFontSizeInput", optionsPanel, "InputBoxTemplate")
-		sizeInput:SetSize(50, 26)
+		InterfaceOptions_AddCategory(optionsPanel)
+
+		-- Setup Sub-category Options Panel (Text Settings)
+		local subTitle = textSettingsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+		subTitle:SetPoint("TOPLEFT", 16, -16)
+		subTitle:SetText("Bagnon Tooltips - Text Settings")
+
+		-- Font Size Textbox (EditBox)
+		local lblSize = textSettingsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		lblSize:SetText("Font Size (6-36):")
+		lblSize:SetPoint("TOPLEFT", subTitle, "BOTTOMLEFT", 4, -20)
+
+		local sizeInput = CreateFrame("EditBox", "BagnonTooltipsFontSizeInput", textSettingsPanel, "InputBoxTemplate")
+		sizeInput:SetSize(60, 26)
 		sizeInput:SetPoint("TOPLEFT", lblSize, "BOTTOMLEFT", 4, -8)
 		sizeInput:SetNumeric(true)
 		sizeInput:SetMaxLetters(2)
 		sizeInput:SetAutoFocus(false)
 
+		-- Indicator of current Font Size
+		local currentSizeLabel = textSettingsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+		currentSizeLabel:SetPoint("LEFT", sizeInput, "RIGHT", 16, 0)
+
+		local function UpdateSizeLabel()
+			local sz = (BagnonTooltipsDB and BagnonTooltipsDB.fontSize) or 12
+			currentSizeLabel:SetText("Current Size: " .. sz)
+		end
+
 		sizeInput:SetScript("OnShow", function(self)
 			self:SetText(tostring((BagnonTooltipsDB and BagnonTooltipsDB.fontSize) or 12))
+			UpdateSizeLabel()
 		end)
 
 		sizeInput:SetScript("OnTextChanged", function(self)
@@ -624,29 +731,30 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 				if val > 36 then val = 36 end
 				if BagnonTooltipsDB then
 					BagnonTooltipsDB.fontSize = val
+					UpdateSizeLabel()
 				end
 			end
 		end)
 
 		sizeInput:SetScript("OnEditFocusLost", function(self)
-			self:SetText(tostring((BagnonTooltipsDB and BagnonTooltipsDB.fontSize) or 12))
+			local sz = (BagnonTooltipsDB and BagnonTooltipsDB.fontSize) or 12
+			self:SetText(tostring(sz))
+			UpdateSizeLabel()
 		end)
 
 		-- Font Type Dropdown
-		local ddFont, lblFont = CreateDropdown(optionsPanel, "Font Type", "fontPath", fontItems, 120)
-		lblFont:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 300, -84)
-		ddFont:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 285, -100)
+		local ddFont, lblFont = CreateDropdown(textSettingsPanel, "Font Type:", "fontPath", fontItems, 120)
+		lblFont:SetPoint("TOPLEFT", sizeInput, "BOTTOMLEFT", -4, -20)
+		ddFont:SetPoint("TOPLEFT", sizeInput, "BOTTOMLEFT", -19, -36)
 
-		-- Color Scheme Dropdown (Combined Player + Detail Colors)
-		local ddScheme, lblScheme = CreateDropdown(optionsPanel, "Color Scheme", "colorScheme", colorSchemeItems, 160)
-		lblScheme:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 300, -154)
-		ddScheme:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 285, -170)
+		-- Bidirectional Color Pickers (Player Name Color and Count Detail Color)
+		local playerColorPicker = CreateColorPickerControl(textSettingsPanel, "Player Name Color:", "playerColor")
+		playerColorPicker:SetPoint("TOPLEFT", ddFont, "BOTTOMLEFT", 19, -20)
 
-		optionsPanel:SetScript("OnShow", function(self)
-			self:RefreshList()
-		end)
+		local detailColorPicker = CreateColorPickerControl(textSettingsPanel, "Count Detail Color:", "detailColor")
+		detailColorPicker:SetPoint("TOPLEFT", playerColorPicker, "BOTTOMLEFT", 0, -10)
 
-		InterfaceOptions_AddCategory(optionsPanel)
+		InterfaceOptions_AddCategory(textSettingsPanel)
 
 		-- Register Slash Commands
 		SlashCmdList["BAGNONTOOLTIPS"] = HandleBlacklistCmd
