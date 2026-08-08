@@ -48,6 +48,35 @@ local function InitDB()
 	if not BagnonTooltipsDB.blacklist then
 		BagnonTooltipsDB.blacklist = {}
 	end
+	if BagnonTooltipsDB.fontSize == nil then
+		BagnonTooltipsDB.fontSize = 12
+	end
+	if BagnonTooltipsDB.fontPath == nil then
+		BagnonTooltipsDB.fontPath = "Default"
+	end
+	if BagnonTooltipsDB.playerColor == nil then
+		BagnonTooltipsDB.playerColor = "00ff9a"
+	end
+	if BagnonTooltipsDB.detailColor == nil then
+		BagnonTooltipsDB.detailColor = "c7c7cf"
+	end
+end
+
+-- Custom color helpers
+local function GetPlayerColor()
+	return (BagnonTooltipsDB and BagnonTooltipsDB.playerColor) or "00ff9a"
+end
+
+local function GetDetailColor()
+	return (BagnonTooltipsDB and BagnonTooltipsDB.detailColor) or "c7c7cf"
+end
+
+local function formatPlayerColor(text)
+	return string.format("|cff%s%s|r", GetPlayerColor(), text)
+end
+
+local function formatDetailColor(text)
+	return string.format("|cff%s%s|r", GetDetailColor(), text)
 end
 
 -- Formatting functions
@@ -103,10 +132,10 @@ local function CountsToInfoString(invCount, bankCount, equipCount)
 
 	if info then
 		if total and not(total == invCount or total == bankCount or total == equipCount) then
-			local totalStr = format(TEAL, FormatNumber(total))
-			return totalStr .. format(SILVER, format(' (%s)', info))
+			local totalStr = formatPlayerColor(FormatNumber(total))
+			return totalStr .. formatDetailColor(string.format(' (%s)', info))
 		end
-		return format(TEAL, FormatNumber(total))
+		return formatPlayerColor(FormatNumber(total))
 	end
 end
 
@@ -186,9 +215,11 @@ local function AddOwners(frame, link)
 
 	local isCondensed = BagnonTooltipsDB.condense and not IsShiftKeyDown()
 
+	local numLinesBefore = frame:NumLines()
+
 	if isCondensed then
 		-- Option A: single aggregated line across the account
-		frame:AddDoubleLine(format(TEAL, L_TOTAL), format(TEAL, FormatNumber(totalCount)))
+		frame:AddDoubleLine(formatPlayerColor(L_TOTAL), formatPlayerColor(FormatNumber(totalCount)))
 	else
 		-- Expanded: show each character separately, guild bank, and total at the bottom
 		local sortedPlayers = {}
@@ -204,16 +235,37 @@ local function AddOwners(frame, link)
 		for _, player in ipairs(sortedPlayers) do
 			local infoString = playersData[player]
 			if infoString and infoString ~= '' then
-				frame:AddDoubleLine(format(TEAL, player), infoString)
+				frame:AddDoubleLine(formatPlayerColor(player), infoString)
 			end
 		end
 
 		if guildTotal > 0 then
-			frame:AddDoubleLine(format(TEAL, L_GUILD_BANK), format(TEAL, FormatNumber(guildTotal)))
+			frame:AddDoubleLine(formatPlayerColor(L_GUILD_BANK), formatPlayerColor(FormatNumber(guildTotal)))
 		end
 
 		-- Total line at the bottom
-		frame:AddDoubleLine(format(TEAL, L_TOTAL), format(TEAL, FormatNumber(totalCount)))
+		frame:AddDoubleLine(formatPlayerColor(L_TOTAL), formatPlayerColor(FormatNumber(totalCount)))
+	end
+
+	-- Apply custom font & font size to our added lines
+	local numLinesAfter = frame:NumLines()
+	for i = numLinesBefore + 1, numLinesAfter do
+		local leftTextStr = _G[frame:GetName() .. "TextLeft" .. i]
+		local rightTextStr = _G[frame:GetName() .. "TextRight" .. i]
+
+		if leftTextStr then
+			local currentFont, currentSize, currentFlags = leftTextStr:GetFont()
+			local size = BagnonTooltipsDB.fontSize or currentSize
+			local fontPath = (BagnonTooltipsDB.fontPath and BagnonTooltipsDB.fontPath ~= "Default") and BagnonTooltipsDB.fontPath or currentFont
+			leftTextStr:SetFont(fontPath, size, currentFlags)
+		end
+
+		if rightTextStr then
+			local currentFont, currentSize, currentFlags = rightTextStr:GetFont()
+			local size = BagnonTooltipsDB.fontSize or currentSize
+			local fontPath = (BagnonTooltipsDB.fontPath and BagnonTooltipsDB.fontPath ~= "Default") and BagnonTooltipsDB.fontPath or currentFont
+			rightTextStr:SetFont(fontPath, size, currentFlags)
+		end
 	end
 
 	frame:Show()
@@ -254,6 +306,66 @@ local function CreateCheckbox(parent, label, settingKey, description)
 	return check
 end
 
+-- Slider creation helper
+local function CreateSlider(parent, label, settingKey, minVal, maxVal, step)
+	local slider = CreateFrame("Slider", parent:GetName() .. "_" .. settingKey, parent, "OptionsSliderTemplate")
+	slider:SetMinMaxValues(minVal, maxVal)
+	slider:SetValueStep(step)
+
+	_G[slider:GetName() .. "Text"]:SetText(label)
+	_G[slider:GetName() .. "Low"]:SetText(tostring(minVal))
+	_G[slider:GetName() .. "High"]:SetText(tostring(maxVal))
+
+	slider:SetScript("OnShow", function(self)
+		local val = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or 12
+		self:SetValue(val)
+	end)
+
+	slider:SetScript("OnValueChanged", function(self, value)
+		if BagnonTooltipsDB then
+			BagnonTooltipsDB[settingKey] = value
+		end
+	end)
+
+	return slider
+end
+
+-- Dropdown creation helper
+local function CreateDropdown(parent, label, settingKey, items, width)
+	local labelString = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	labelString:SetText(label)
+
+	local dropdown = CreateFrame("Frame", parent:GetName() .. "_" .. settingKey, parent, "UIDropDownMenuTemplate")
+	UIDropDownMenu_SetWidth(dropdown, width or 120)
+
+	local function Dropdown_OnClick(self)
+		UIDropDownMenu_SetSelectedValue(dropdown, self.value)
+		if BagnonTooltipsDB then
+			BagnonTooltipsDB[settingKey] = self.value
+		end
+	end
+
+	local function Dropdown_Initialize(self)
+		local selectedValue = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or items[1].value
+		for _, item in ipairs(items) do
+			local info = UIDropDownMenu_CreateInfo()
+			info.text = item.text
+			info.value = item.value
+			info.func = Dropdown_OnClick
+			info.checked = (item.value == selectedValue)
+			UIDropDownMenu_AddButton(info)
+		end
+	end
+
+	dropdown:SetScript("OnShow", function(self)
+		UIDropDownMenu_Initialize(self, Dropdown_Initialize)
+		local selectedValue = (BagnonTooltipsDB and BagnonTooltipsDB[settingKey]) or items[1].value
+		UIDropDownMenu_SetSelectedValue(self, selectedValue)
+	end)
+
+	return dropdown, labelString
+end
+
 local listButtons = {}
 
 function optionsPanel:RefreshList()
@@ -280,7 +392,7 @@ function optionsPanel:RefreshList()
 		local btn = listButtons[i]
 		if not btn then
 			btn = CreateFrame("Frame", "BagnonTooltipsBlacklistEntry" .. i, BagnonTooltipsScrollChild)
-			btn:SetSize(300, 24)
+			btn:SetSize(240, 24)
 
 			-- Text
 			local text = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -413,6 +525,27 @@ local function HandleBlacklistCmd(msg)
 	end
 end
 
+local fontItems = {
+	{ text = "Default", value = "Default" },
+	{ text = "Friz Quadrata", value = "Fonts\\FRIZQT__.TTF" },
+	{ text = "Arial Narrow", value = "Fonts\\ARIALN.TTF" },
+	{ text = "Morpheus", value = "Fonts\\MORPHEUS.TTF" },
+	{ text = "Skurri", value = "Fonts\\skurri.ttf" }
+}
+
+local colorItems = {
+	{ text = "Teal (Default Player)", value = "00ff9a" },
+	{ text = "Silver (Default Detail)", value = "c7c7cf" },
+	{ text = "Red", value = "ff0000" },
+	{ text = "Green", value = "00ff00" },
+	{ text = "Blue", value = "00c0ff" },
+	{ text = "Yellow", value = "ffff00" },
+	{ text = "Orange", value = "ff8000" },
+	{ text = "Purple", value = "a335ee" },
+	{ text = "Pink", value = "ff69b4" },
+	{ text = "White", value = "ffffff" }
+}
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, addonName)
@@ -426,6 +559,7 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		title:SetPoint("TOPLEFT", 16, -16)
 		title:SetText("Bagnon Tooltips Settings")
 
+		-- Column 1 (Left Column)
 		local cbShort = CreateCheckbox(optionsPanel, "Enable Short Number Formatting", "shortNumbers", "Format numbers like 23.4k and 1.234m.")
 		cbShort:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -16)
 
@@ -436,16 +570,16 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		cbGuild:SetPoint("TOPLEFT", cbCondense, "BOTTOMLEFT", 0, -8)
 
 		local blTitle = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-		blTitle:SetPoint("TOPLEFT", cbGuild, "BOTTOMLEFT", 0, -24)
+		blTitle:SetPoint("TOPLEFT", cbGuild, "BOTTOMLEFT", 0, -20)
 		blTitle:SetText("Blacklisted Items (Names or IDs):")
 
 		local editBox = CreateFrame("EditBox", "BagnonTooltipsBlacklistInput", optionsPanel, "InputBoxTemplate")
-		editBox:SetSize(200, 26)
+		editBox:SetSize(160, 26)
 		editBox:SetPoint("TOPLEFT", blTitle, "BOTTOMLEFT", 4, -8)
 		editBox:SetAutoFocus(false)
 
 		local addButton = CreateFrame("Button", "BagnonTooltipsBlacklistAddBtn", optionsPanel, "UIPanelButtonTemplate")
-		addButton:SetSize(80, 22)
+		addButton:SetSize(60, 22)
 		addButton:SetPoint("LEFT", editBox, "RIGHT", 8, 0)
 		addButton:SetText("Add")
 
@@ -463,8 +597,8 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		end)
 
 		local listBg = CreateFrame("Frame", "BagnonTooltipsBlacklistBg", optionsPanel, BackdropTemplateMixin and "BackdropTemplate" or nil)
-		listBg:SetSize(350, 180)
-		listBg:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", -4, -16)
+		listBg:SetSize(250, 160)
+		listBg:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", -4, -12)
 		listBg:SetBackdrop({
 			bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
 			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -479,8 +613,24 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		scrollFrame:SetPoint("BOTTOMRIGHT", -28, 8)
 
 		BagnonTooltipsScrollChild = CreateFrame("Frame", "BagnonTooltipsScrollChild", scrollFrame)
-		BagnonTooltipsScrollChild:SetSize(310, 1)
+		BagnonTooltipsScrollChild:SetSize(210, 1)
 		scrollFrame:SetScrollChild(BagnonTooltipsScrollChild)
+
+		-- Column 2 (Right Column, X = 280)
+		local sliderSize = CreateSlider(optionsPanel, "Font Size", "fontSize", 8, 24, 1)
+		sliderSize:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 280, -24)
+
+		local ddFont, lblFont = CreateDropdown(optionsPanel, "Font Type", "fontPath", fontItems, 120)
+		lblFont:SetPoint("TOPLEFT", sliderSize, "BOTTOMLEFT", 0, -24)
+		ddFont:SetPoint("TOPLEFT", sliderSize, "BOTTOMLEFT", -15, -40)
+
+		local ddPlayerColor, lblPlayerColor = CreateDropdown(optionsPanel, "Player Name Color", "playerColor", colorItems, 140)
+		lblPlayerColor:SetPoint("TOPLEFT", ddFont, "BOTTOMLEFT", 15, -20)
+		ddPlayerColor:SetPoint("TOPLEFT", ddFont, "BOTTOMLEFT", 0, -36)
+
+		local ddDetailColor, lblDetailColor = CreateDropdown(optionsPanel, "Count Detail Color", "detailColor", colorItems, 140)
+		lblDetailColor:SetPoint("TOPLEFT", ddPlayerColor, "BOTTOMLEFT", 15, -20)
+		ddDetailColor:SetPoint("TOPLEFT", ddPlayerColor, "BOTTOMLEFT", 0, -36)
 
 		optionsPanel:SetScript("OnShow", function(self)
 			self:RefreshList()

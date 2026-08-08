@@ -39,13 +39,29 @@ end
 
 --returns the full item link only for items that have enchants/suffixes, otherwise returns the item's ID
 local function ToShortLink(link)
-	if link then
-		local a,b,c,d,e,f,g,h = link:match('(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+)')
-		if(b == '0' and b == c and c == d and d == e and e == f and f == g) then
+	if not link then return end
+
+	-- If it's already a number or a simple string representing a number, return it as-is
+	if tonumber(link) then
+		return tostring(link)
+	end
+
+	-- Try matching the standard item fields
+	local a, b, c, d, e, f, g, h = link:match('(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+):(%-?%d+)')
+	if a then
+		if (b == '0' and b == c and c == d and d == e and e == f and f == g) then
 			return a
 		end
 		return format('item:%s:%s:%s:%s:%s:%s:%s:%s', a, b, c, d, e, f, g, h)
 	end
+
+	-- If match failed, but it contains itemID in a link, extract it
+	local itemID = link:match("item:(%d+)")
+	if itemID then
+		return itemID
+	end
+
+	return link
 end
 
 local function GetBagSize(bag)
