@@ -21,6 +21,7 @@ local NUM_EQUIPMENT_SLOTS = 19
 local currentPlayer = UnitName('player') --the name of the current player that's logged on
 local currentRealm = GetRealmName() --what currentRealm we're on
 local playerList --a sorted list of players
+local cachedPlayers
 
 
 --[[ Local Functions ]]--
@@ -131,6 +132,80 @@ function BagnonDB:PLAYER_LOGIN()
 	self:RegisterEvent('PLAYERBANKSLOTS_CHANGED')
 	self:RegisterEvent('UNIT_INVENTORY_CHANGED')
 	self:RegisterEvent('PLAYERBANKBAGSLOTS_CHANGED')
+
+	-- Guild Bank Events
+	self:RegisterEvent('GUILDBANKFRAME_OPENED')
+	self:RegisterEvent('GUILDBANKFRAME_CLOSED')
+	self:RegisterEvent('GUILDBANKBAGSLOTS_CHANGED')
+	self:RegisterEvent('GUILDBANK_UPDATE_TABS')
+end
+
+function BagnonDB:GUILDBANKFRAME_OPENED()
+	self.atGuildBank = true
+	local tab = GetCurrentGuildBankTab()
+	if tab then
+		self:SaveGuildBankTab(tab)
+	end
+end
+
+function BagnonDB:GUILDBANKFRAME_CLOSED()
+	self.atGuildBank = nil
+end
+
+function BagnonDB:GUILDBANKBAGSLOTS_CHANGED()
+	if self.atGuildBank then
+		local tab = GetCurrentGuildBankTab()
+		if tab then
+			self:SaveGuildBankTab(tab)
+		end
+	end
+end
+
+function BagnonDB:GUILDBANK_UPDATE_TABS()
+	if self.atGuildBank then
+		local tab = GetCurrentGuildBankTab()
+		if tab then
+			self:SaveGuildBankTab(tab)
+		end
+	end
+end
+
+function BagnonDB:SaveGuildBankTab(tab)
+	local guildName = GetGuildInfo('player')
+	if not guildName or guildName == "" then return end
+
+	local key = "*guild_" .. guildName
+	if not self.rdb[key] then
+		self.rdb[key] = {}
+	end
+	local db = self.rdb[key]
+
+	-- Clear old items for this tab
+	local prefix = tab .. ","
+	for k in pairs(db) do
+		if type(k) == "string" and k:find("^" .. prefix) then
+			db[k] = nil
+		end
+	end
+
+	-- A guild bank tab has 98 slots
+	local numSlots = 98
+	for slot = 1, numSlots do
+		local link = GetGuildBankItemLink(tab, slot)
+		if link then
+			local shortLink = ToShortLink(link)
+			local _, count = GetGuildBankItemInfo(tab, slot)
+			count = (count and count > 1) and count or nil
+
+			if shortLink then
+				if count then
+					db[prefix .. slot] = format('%s,%d', shortLink, count)
+				else
+					db[prefix .. slot] = shortLink
+				end
+			end
+		end
+	end
 end
 
 function BagnonDB:PLAYER_MONEY()
@@ -205,7 +280,38 @@ function BagnonDB:GetPlayerList()
 end
 
 function BagnonDB:GetPlayers()
-	return pairs(self.rdb)
+	if not cachedPlayers then
+		cachedPlayers = {}
+		for k, v in pairs(self.rdb) do
+			if type(k) == "string" and not k:find("^%*guild_") then
+				cachedPlayers[k] = v
+			end
+		end
+	end
+	return pairs(cachedPlayers)
+end
+
+function BagnonDB:GetGuildItemCount(itemLink)
+	local total = 0
+	local targetShort = ToShortLink(itemLink)
+	if not targetShort then return 0 end
+
+	for key, guildData in pairs(self.rdb) do
+		if type(key) == "string" and key:find("^%*guild_") then
+			for tab_slot, itemData in pairs(guildData) do
+				if type(itemData) == "string" then
+					local link, count = strsplit(',', itemData)
+					if link then
+						local storedShort = ToShortLink(link)
+						if storedShort == targetShort then
+							total = total + (tonumber(count) or 1)
+						end
+					end
+				end
+			end
+		end
+	end
+	return total
 end
 
 
@@ -437,6 +543,7 @@ end
 
 --removes all saved data about the given player
 function BagnonDB:RemovePlayer(player, realm)
+	cachedPlayers = nil
 	local realm = realm or currentRealm
 	local rdb = self.db[realm]
 	if rdb then
