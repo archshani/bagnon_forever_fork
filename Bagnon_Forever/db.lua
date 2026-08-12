@@ -134,12 +134,37 @@ end
 
 --[[  Events ]]--
 
+function BagnonDB:SaveCurrencies()
+	self.pdb.currencies = {}
+	if GetNumCurrencies then
+		for i = 1, GetNumCurrencies() do
+			local name, isHeader, _, _, _, count = GetCurrencyListInfo(i)
+			if name and not isHeader and count and count > 0 then
+				self.pdb.currencies[name] = count
+			end
+		end
+	end
+end
+
+function BagnonDB:CURRENCY_DISPLAY_UPDATE()
+	self:SaveCurrencies()
+end
+
+function BagnonDB:GetCurrencyCount(player, currencyName)
+	local playerDB = self.rdb[player]
+	if playerDB and playerDB.currencies then
+		return playerDB.currencies[currencyName] or 0
+	end
+	return 0
+end
+
 function BagnonDB:PLAYER_LOGIN()
 	self:SaveMoney()
 	self:UpdateBag(BACKPACK_CONTAINER)
 	self:UpdateBag(KEYRING_CONTAINER)
 	self:SaveEquipment()
 	self:SaveNumBankSlots()
+	self:SaveCurrencies()
 
 	self:RegisterEvent('BANKFRAME_OPENED')
 	self:RegisterEvent('BANKFRAME_CLOSED')
@@ -148,6 +173,7 @@ function BagnonDB:PLAYER_LOGIN()
 	self:RegisterEvent('PLAYERBANKSLOTS_CHANGED')
 	self:RegisterEvent('UNIT_INVENTORY_CHANGED')
 	self:RegisterEvent('PLAYERBANKBAGSLOTS_CHANGED')
+	self:RegisterEvent('CURRENCY_DISPLAY_UPDATE')
 
 	-- Guild Bank Events
 	self:RegisterEvent('GUILDBANKFRAME_OPENED')

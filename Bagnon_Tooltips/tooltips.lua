@@ -130,6 +130,22 @@ local function FormatNumber(count)
 	end
 end
 
+local function FormatMoney(money)
+	local gold = math.floor(money / 10000)
+	local silver = math.floor((money % 10000) / 100)
+	local copper = money % 100
+
+	local result = ""
+	if gold > 0 then
+		result = result .. gold .. "|cffffd700g|r "
+	end
+	if silver > 0 or gold > 0 then
+		result = result .. silver .. "|cffc7c7cfs|r "
+	end
+	result = result .. copper .. "|cffeda55fc|r"
+	return result
+end
+
 local function GetNumBagsString(count)
 	local fmt = (BAGNON_NUM_BAGS or 'Bags: %d'):gsub("%%d", "%%s")
 	return fmt:format(FormatNumber(count))
@@ -486,25 +502,13 @@ function optionsPanel:RefreshList()
 			text:SetJustifyH("LEFT")
 			btn.text = text
 
-			-- Delete Button
+			-- Delete Button with standard texture path
 			local del = CreateFrame("Button", nil, btn)
 			del:SetSize(16, 16)
 			del:SetPoint("RIGHT", -8, 0)
-
-			local ntex = del:CreateTexture()
-			ntex:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
-			ntex:SetAllPoints()
-			del:SetNormalTexture(ntex)
-
-			local ptex = del:CreateTexture()
-			ptex:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Down")
-			ptex:SetAllPoints()
-			del:SetPushedTexture(ptex)
-
-			local htex = del:CreateTexture()
-			htex:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
-			htex:SetAllPoints()
-			del:SetHighlightTexture(htex)
+			del:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+			del:SetPushedTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Down")
+			del:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
 
 			del:SetScript("OnClick", function()
 				if BagnonTooltipsDB and BagnonTooltipsDB.blacklist then
@@ -617,6 +621,108 @@ local fontItems = {
 	{ text = "Skurri", value = "Fonts\\skurri.ttf" }
 }
 
+-- Currency tracking and dynamic Money frame hooking
+local function AppendCurrencyTooltip(tooltip, currencyName)
+	if not BagnonTooltipsDB or not currencyName then return end
+	if IsBlacklisted(currencyName) then return end
+
+	local total = 0
+	local playersData = {}
+
+	for player in BagnonDB:GetPlayers() do
+		local count = BagnonDB.GetCurrencyCount and BagnonDB:GetCurrencyCount(player, currencyName) or 0
+		if count > 0 then
+			total = total + count
+			playersData[player] = count
+		end
+	end
+
+	if total == 0 then return end
+
+	tooltip:AddLine(" ")
+	tooltip:AddLine(formatPlayerColor(currencyName .. " " .. L_TOTAL .. ": " .. FormatNumber(total)))
+
+	local sortedPlayers = {}
+	for player in pairs(playersData) do
+		table.insert(sortedPlayers, player)
+	end
+	table.sort(sortedPlayers, function(a, b)
+		if a == currentPlayer then return true end
+		if b == currentPlayer then return false end
+		return a < b
+	end)
+
+	for _, player in ipairs(sortedPlayers) do
+		tooltip:AddDoubleLine(formatPlayerColor(player), formatDetailColor(FormatNumber(playersData[player])))
+	end
+
+	tooltip:Show()
+end
+
+if GameTooltip.SetCurrencyToken then
+	hooksecurefunc(GameTooltip, "SetCurrencyToken", function(self, index)
+		if GetCurrencyListInfo then
+			local name = GetCurrencyListInfo(index)
+			if name then
+				AppendCurrencyTooltip(self, name)
+			end
+		end
+	end)
+end
+
+if GameTooltip.SetBackpackToken then
+	hooksecurefunc(GameTooltip, "SetBackpackToken", function(self, index)
+		if GetBackpackCurrencyInfo then
+			local name = GetBackpackCurrencyInfo(index)
+			if name then
+				AppendCurrencyTooltip(self, name)
+			end
+		end
+	end)
+end
+
+hooksecurefunc(GameTooltip, "Show", function(self)
+	if self.bagnonGoldShown then return end
+
+	local focus = GetMouseFocus()
+	if focus and focus:GetName() and (focus:GetName():find("MoneyFrame") or focus:GetName():find("Money")) then
+		self.bagnonGoldShown = true
+
+		local total = 0
+		local playersData = {}
+		for player in BagnonDB:GetPlayers() do
+			local money = BagnonDB:GetMoney(player) or 0
+			if money > 0 then
+				total = total + money
+				playersData[player] = money
+			end
+		end
+
+		if total > 0 then
+			self:AddLine(" ")
+			self:AddLine(formatPlayerColor("Account Balance: " .. FormatMoney(total)))
+
+			local sortedPlayers = {}
+			for player in pairs(playersData) do
+				table.insert(sortedPlayers, player)
+			end
+			table.sort(sortedPlayers, function(a, b)
+				if a == currentPlayer then return true end
+				if b == currentPlayer then return false end
+				return a < b
+			end)
+
+			for _, player in ipairs(sortedPlayers) do
+				self:AddDoubleLine(formatPlayerColor(player), FormatMoney(playersData[player]))
+			end
+		end
+	end
+end)
+
+hooksecurefunc(GameTooltip, "Hide", function(self)
+	self.bagnonGoldShown = nil
+end)
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, addonName)
@@ -630,6 +736,7 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
 		title:SetPoint("TOPLEFT", 16, -16)
 		title:SetText("Bagnon Tooltips Settings")
 
+		-- Column 1 (Left Column)
 		local cbShort = CreateCheckbox(optionsPanel, "Enable Short Number Formatting", "shortNumbers", "Format numbers like 23.4k and 1.234m.")
 		cbShort:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -16)
 
