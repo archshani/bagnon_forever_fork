@@ -135,15 +135,18 @@ end
 --[[  Events ]]--
 
 function BagnonDB:SaveCurrencies()
-	self.pdb.currencies = {}
-	if GetNumCurrencies then
-		for i = 1, GetNumCurrencies() do
-			local name, isHeader, _, _, _, count = GetCurrencyListInfo(i)
-			if name and not isHeader and count and count > 0 then
-				self.pdb.currencies[name] = count
+	if not self.pdb then return end
+	pcall(function()
+		self.pdb.currencies = {}
+		if GetNumCurrencies then
+			for i = 1, GetNumCurrencies() do
+				local name, isHeader, _, _, _, count = GetCurrencyListInfo(i)
+				if name and not isHeader and count and count > 0 then
+					self.pdb.currencies[name] = count
+				end
 			end
 		end
-	end
+	end)
 end
 
 function BagnonDB:CURRENCY_DISPLAY_UPDATE()

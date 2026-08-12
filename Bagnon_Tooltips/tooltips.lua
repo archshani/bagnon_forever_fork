@@ -35,6 +35,64 @@ local textSettingsPanel = CreateFrame("Frame", "BagnonTooltipsTextSettingsPanel"
 textSettingsPanel.name = "Text Settings"
 textSettingsPanel.parent = "Bagnon Tooltips"
 
+-- Currency Map (Emblems and tokens mapped to their Item IDs)
+local CURRENCY_MAP = {
+	-- English
+	["Emblem of Frost"] = 49426,
+	["Emblem of Triumph"] = 47241,
+	["Emblem of Conquest"] = 45624,
+	["Emblem of Valor"] = 40753,
+	["Emblem of Heroism"] = 40752,
+	["Stone Keeper's Shard"] = 43228,
+	["Venture Co. Coin"] = 37836,
+	["Champion's Seal"] = 44990,
+	-- German (deDE)
+	["Emblem des Frosts"] = 49426,
+	["Emblem des Triumphs"] = 47241,
+	["Emblem der Eroberung"] = 45624,
+	["Emblem der Ehre"] = 40753,
+	["Emblem des Heldentums"] = 40752,
+	["Splitter eines Steinbewahrers"] = 43228,
+	["Münze der Venture Co."] = 37836,
+	["Siegel des Champions"] = 44990,
+	-- French (frFR)
+	["Insigne de givre"] = 49426,
+	["Insigne de triomphe"] = 47241,
+	["Insigne de conquête"] = 45624,
+	["Insigne de vaillance"] = 40753,
+	["Insigne d'héroïsme"] = 40752,
+	["Eclat du gardien des pierres"] = 43228,
+	["Pièce de la Venture Co."] = 37836,
+	["Sceau du champion"] = 44990,
+	-- Russian (ruRU)
+	["Эмблема льда"] = 49426,
+	["Эмблема триумфа"] = 47241,
+	["Эмблема завоевания"] = 45624,
+	["Эмблема доблести"] = 40753,
+	["Эмблема героизма"] = 40752,
+	["Осколок каменного хранителя"] = 43228,
+	["Монета Торговой компании"] = 37836,
+	["Печать чемпиона"] = 44990,
+	-- Chinese Simplified (zhCN)
+	["寒冰纹章"] = 49426,
+	["凯旋纹章"] = 47241,
+	["征服纹章"] = 45624,
+	["勇气纹章"] = 40753,
+	["英雄纹章"] = 40752,
+	["岩石守卫者的碎片"] = 43228,
+	["风险投资公司硬币"] = 37836,
+	["冠军的徽记"] = 44990,
+	-- Chinese Traditional (zhTW)
+	["寒冰紋章"] = 49426,
+	["凱旋紋章"] = 47241,
+	["征服紋章"] = 45624,
+	["勇氣紋章"] = 40753,
+	["英雄紋章"] = 40752,
+	["岩石守衛者的碎片"] = 43228,
+	["風險投資公司硬幣"] = 37836,
+	["冠軍的徽記"] = 44990
+}
+
 -- Default Settings & Init
 local function InitDB()
 	if not BagnonTooltipsDB then
@@ -239,6 +297,10 @@ local function AddOwners(frame, link)
 	if IsBlacklisted(link) then
 		return
 	end
+	if frame.bagnonOwnersShown == link then
+		return
+	end
+	frame.bagnonOwnersShown = link
 
 	local totalCount = 0
 	local playersData = {}
@@ -328,6 +390,9 @@ local function HookTip(tooltip)
 		if itemLink and GetItemInfo(itemLink) then --fix for blizzard doing craziness when doing getiteminfo
 			AddOwners(self, itemLink)
 		end
+	end)
+	tooltip:HookScript('OnTooltipCleared', function(self)
+		self.bagnonOwnersShown = nil
 	end)
 end
 
@@ -492,28 +557,35 @@ function optionsPanel:RefreshList()
 	for i, key in ipairs(keys) do
 		local btn = listButtons[i]
 		if not btn then
+			-- Create container frame with correct dimensions (fits completely inside the scroll frame)
 			btn = CreateFrame("Frame", "BagnonTooltipsBlacklistEntry" .. i, BagnonTooltipsScrollChild)
-			btn:SetSize(240, 24)
+			btn:SetSize(210, 24)
 
 			-- Text
 			local text = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 			text:SetPoint("LEFT", 8, 0)
-			text:SetPoint("RIGHT", -32, 0)
+			text:SetPoint("RIGHT", -28, 0)
 			text:SetJustifyH("LEFT")
 			btn.text = text
 
-			-- Delete Button with standard texture path
-			local del = CreateFrame("Button", nil, btn)
-			del:SetSize(16, 16)
-			del:SetPoint("RIGHT", -8, 0)
-			del:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
-			del:SetPushedTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Down")
-			del:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
+			-- Delete Button - standard UIPanelButton is 100% visible and clickable
+			local del = CreateFrame("Button", nil, btn, "UIPanelButtonTemplate")
+			del:SetSize(18, 18)
+			del:SetPoint("RIGHT", -4, 0)
+			del:SetText("X")
+			del:SetFrameLevel(btn:GetFrameLevel() + 2)
 
-			del:SetScript("OnClick", function()
-				if BagnonTooltipsDB and BagnonTooltipsDB.blacklist then
-					BagnonTooltipsDB.blacklist[btn.key] = nil
-					print(string.format("|cff00ff9aBagnon Tooltips:|r Removed '%s' from the blacklist.", tostring(btn.key)))
+			del:SetScript("OnClick", function(self)
+				local parentBtn = self:GetParent()
+				local keyVal = parentBtn.key
+				if BagnonTooltipsDB and BagnonTooltipsDB.blacklist and keyVal then
+					BagnonTooltipsDB.blacklist[keyVal] = nil
+					BagnonTooltipsDB.blacklist[tostring(keyVal)] = nil
+					local numKey = tonumber(keyVal)
+					if numKey then
+						BagnonTooltipsDB.blacklist[numKey] = nil
+					end
+					print(string.format("|cff00ff9aBagnon Tooltips:|r Removed '%s' from the blacklist.", tostring(keyVal)))
 					optionsPanel:RefreshList()
 				end
 			end)
@@ -621,7 +693,7 @@ local fontItems = {
 	{ text = "Skurri", value = "Fonts\\skurri.ttf" }
 }
 
--- Currency tracking and dynamic Money frame hooking
+-- Currency and token lookup on tooltip show
 local function AppendCurrencyTooltip(tooltip, currencyName)
 	if not BagnonTooltipsDB or not currencyName then return end
 	if IsBlacklisted(currencyName) then return end
@@ -659,6 +731,7 @@ local function AppendCurrencyTooltip(tooltip, currencyName)
 	tooltip:Show()
 end
 
+-- Hook standard currency tokens
 if GameTooltip.SetCurrencyToken then
 	hooksecurefunc(GameTooltip, "SetCurrencyToken", function(self, index)
 		if GetCurrencyListInfo then
@@ -681,6 +754,34 @@ if GameTooltip.SetBackpackToken then
 	end)
 end
 
+-- Tooltip Show currency mapping
+local function OnTooltipShow(self)
+	local firstLine = _G[self:GetName() .. "TextLeft1"]
+	local name = firstLine and firstLine:GetText()
+	if name then
+		local itemID = CURRENCY_MAP[name]
+		if itemID then
+			local itemLink = select(2, GetItemInfo(itemID))
+			if itemLink then
+				AddOwners(self, itemLink)
+			end
+		end
+	end
+end
+
+local function HookCurrencyTip(tooltip)
+	tooltip:HookScript('OnShow', function(self)
+		OnTooltipShow(self)
+	end)
+	tooltip:HookScript('OnTooltipCleared', function(self)
+		self.bagnonOwnersShown = nil
+	end)
+end
+
+HookCurrencyTip(GameTooltip)
+HookCurrencyTip(ItemRefTooltip)
+
+-- Money tooltip gold summary hooking
 hooksecurefunc(GameTooltip, "Show", function(self)
 	if self.bagnonGoldShown then return end
 
@@ -721,6 +822,12 @@ end)
 
 hooksecurefunc(GameTooltip, "Hide", function(self)
 	self.bagnonGoldShown = nil
+	self.bagnonOwnersShown = nil
+end)
+
+hooksecurefunc(ItemRefTooltip, "Hide", function(self)
+	self.bagnonGoldShown = nil
+	self.bagnonOwnersShown = nil
 end)
 
 local eventFrame = CreateFrame("Frame")
